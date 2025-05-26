@@ -1,0 +1,149 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ニュースまとめ（スクロール追加）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: sans-serif; background: #f2f2f2; margin: 0; }
+    header { background: #222; color: white; padding: 1em; text-align: center; }
+    .selector { text-align: center; margin: 1em; }
+    select, button { padding: 0.5em; font-size: 1em; }
+    .news-container { padding: 1em; }
+    .card { background: white; margin-bottom: 1em; padding: 1em; border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .card {
+      display: flex;
+      align-items: flex-start;
+      gap: 1em;
+      background: white;
+      margin-bottom: 1em;
+      padding: 1em;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .card img {
+      width: 100px;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .card-content {
+      flex: 1;
+    }
+    .card .date { font-size: 0.9em; color: #555; margin-top: 0.3em; }
+    .loading { text-align: center; padding: 1em; color: #777; }
+  </style>
+</head>
+<body>
+  <header>ニュースまとめ（スクロールで追加）</header>
+  <div class="selector">
+    <button id="refreshBtn">🔄 ニュースを更新</button><br><br>
+    <label for="categorySelect">カテゴリを選択：</label>
+    <select id="categorySelect">
+      <option value="toyokeizai">東洋経済オンライン</option>
+      <option value="nhk">NHKニュース</option>
+      <option value="asahi">朝日新聞デジタル</option>
+      <option value="itmedia">ITmedia</option>
+      <option value="cnet">CNET Japan</option>
+      <option value="bunshun">文春オンライン</option>
+      <option value="gigazine">Gigazine</option>
+    </select>
+  </div>
+  <div class="news-container" id="newsContainer"></div>
+  <div class="loading" id="loading">読み込み中...</div>
+
+  <script>
+    const rssMap = {
+      "toyokeizai": "https://toyokeizai.net/list/feed/rss",
+      "nhk": "https://www3.nhk.or.jp/rss/news/cat0.xml",
+      "asahi": "https://www.asahi.com/rss/asahi/newsheadlines.rdf",
+      "itmedia": "https://rss.itmedia.co.jp/rss/2.0/news_bursts.xml",
+      "cnet": "https://japan.cnet.com/rss/index.rdf",
+      "bunshun": "https://bunshun.jp/list/feed/rss",
+      "gigazine": "https://gigazine.net/news/rss_2.0/"
+    };
+
+    const container = document.getElementById("newsContainer");
+    const loading = document.getElementById("loading");
+    const select = document.getElementById("categorySelect");
+    const refreshBtn = document.getElementById("refreshBtn");
+
+    let allItems = [];
+    let currentIndex = 0;
+    const batchSize = 10;
+
+    function fetchRSS(url) {
+      const proxyUrl = "https://api.allorigins.win/get?url=" + encodeURIComponent(url);
+      return fetch(proxyUrl).then(response => response.json());
+    }
+
+    function extractImage(item) {
+      const enclosure = item.querySelector("enclosure");
+      let imageUrl = enclosure ? enclosure.getAttribute("url") : "";
+      if (!imageUrl) {
+        const desc = item.querySelector("description")?.textContent || "";
+        const match = desc.match(/<img[^>]+src=["']([^"']+)["']/i);
+        imageUrl = match ? match[1] : "";
+      }
+      return imageUrl;
+    }
+
+    function renderBatch() {
+      const batch = allItems.slice(currentIndex, currentIndex + batchSize);
+      batch.forEach(item => {
+        const title = item.querySelector("title")?.textContent || "";
+        const link = item.querySelector("link")?.textContent || "#";
+        const pubDate = item.querySelector("pubDate")?.textContent || "";
+        const imageUrl = extractImage(item);
+
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `${imageUrl ? `<img src="${imageUrl}" alt="記事画像">` : ""}<div class="card-content"><h3><a href="${link}" target="_blank">${title}</a></h3>
+          <p class="date">公開日: ${new Date(pubDate).toLocaleString("ja-JP")}</p>
+        `;
+        container.appendChild(card);
+      });
+      currentIndex += batchSize;
+      if (currentIndex >= allItems.length) {
+        loading.textContent = "すべて読み込み済み";
+      } else {
+        loading.textContent = "さらに読み込むにはスクロール";
+      }
+    }
+
+    async function updateFeed(rssKey) {
+      container.innerHTML = "";
+      loading.textContent = "読み込み中...";
+      allItems = [];
+      currentIndex = 0;
+
+      try {
+        const rssUrl = rssMap[rssKey];
+        const res = await fetchRSS(rssUrl);
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(res.contents, "text/xml");
+        const items = Array.from(xml.querySelectorAll("item")).slice(0, 50);
+        allItems = items;
+        renderBatch();
+      } catch (err) {
+        console.error(err);
+        loading.textContent = "取得に失敗しました。";
+      }
+    }
+
+    function onScroll() {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 100) {
+        renderBatch();
+      }
+    }
+
+    select.addEventListener("change", () => updateFeed(select.value));
+    refreshBtn.addEventListener("click", () => updateFeed(select.value));
+    window.addEventListener("scroll", onScroll);
+    window.addEventListener("load", () => updateFeed(select.value));
+  </script>
+</body>
+</html>
